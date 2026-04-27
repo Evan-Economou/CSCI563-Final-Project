@@ -15,21 +15,11 @@ __global__ void online_softmax(const float* x, float* y, int V) {
     for (int j = 0; j < V; ++j)
         float old_m = m;
         if (x[j] > m) m = x[j];
-        d = d * std::expf(old_m - m) + std::expf(x[j] - m);
+        d = d * std::exp(old_m - m) + std::exp(x[j] - m);
 
     // Pass 2: normalize
     for (int i = 0; i < V; ++i)
-        y[i] = std::expf(x[i] - m) / d;
-}
-
-static void usage(const char* prog) {
-    std::fprintf(stderr,
-        "Usage: %s <input_file> [output_file]\n"
-        "\n"
-        "  input_file   — text file with whitespace-separated floats\n"
-        "  output_file  — optional; defaults to stdout\n"
-        "\n"
-        "Timing is always written to stderr.\n", prog);
+        y[i] = std::exp(x[i] - m) / d;
 }
 
 int main(int argc, char* argv[]) {
@@ -62,17 +52,7 @@ int main(int argc, char* argv[]) {
     //....
 
     // Write output
-    FILE* fout = stdout;
-    bool close_out = false;
-    if (argc >= 3) {
-        fout = std::fopen(argv[2], "w");
-        if (!fout) { std::perror(argv[2]); return 1; }
-        close_out = true;
-    }
+    if(write_out(&y, (argc >= 3) ? argv[2] : nullptr)) return 1;
 
-    for (std::size_t i = 0; i < y.size(); ++i)
-        std::fprintf(fout, "%.9g\n", y[i]);
-
-    if (close_out) std::fclose(fout);
     return 0;
 }

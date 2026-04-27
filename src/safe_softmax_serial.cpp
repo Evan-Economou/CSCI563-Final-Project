@@ -14,21 +14,11 @@ static void safe_softmax(const float* x, float* y, int V) {
     // Pass 2: sum of shifted exponentials
     float d = 0.0f;
     for (int j = 0; j < V; ++j)
-        d += std::expf(x[j] - m);
+        d += std::exp(x[j] - m);
 
     // Pass 3: normalize
     for (int i = 0; i < V; ++i)
-        y[i] = std::expf(x[i] - m) / d;
-}
-
-static void usage(const char* prog) {
-    std::fprintf(stderr,
-        "Usage: %s <input_file> [output_file]\n"
-        "\n"
-        "  input_file   — text file with whitespace-separated floats\n"
-        "  output_file  — optional; defaults to stdout\n"
-        "\n"
-        "Timing is always written to stderr.\n", prog);
+        y[i] = std::exp(x[i] - m) / d;
 }
 
 int main(int argc, char* argv[]) {
@@ -40,26 +30,20 @@ int main(int argc, char* argv[]) {
 
     // Time the kernel (exclude I/O)
     std::vector<float> y(x.size());
+
+    std::printf("Start\n");
     
     auto t0 = std::chrono::high_resolution_clock::now();
     safe_softmax(x.data(), y.data(), static_cast<int>(x.size()));
     auto t1 = std::chrono::high_resolution_clock::now();
 
+    std::printf("Done\n");
+
     double elapsed_us = std::chrono::duration<double, std::micro>(t1 - t0).count();
     std::fprintf(stderr, "time: %.3f us  (V=%zu)\n", elapsed_us, x.size());
 
     // Write output
-    FILE* fout = stdout;
-    bool close_out = false;
-    if (argc >= 3) {
-        fout = std::fopen(argv[2], "w");
-        if (!fout) { std::perror(argv[2]); return 1; }
-        close_out = true;
-    }
-
-    for (std::size_t i = 0; i < y.size(); ++i)
-        std::fprintf(fout, "%.9g\n", y[i]);
-
-    if (close_out) std::fclose(fout);
+    if(write_out(&y, (argc >= 3) ? argv[2] : nullptr)) return 1;
+    
     return 0;
 }
