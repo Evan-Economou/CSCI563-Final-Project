@@ -1,22 +1,23 @@
+#include <cuda_runtime_api.h>
 #include <chrono>
 #include <limits>
 #include <string>
 #include "util.h"
 
-// Algorithm 2: Safe Softmax (3-pass)
-// Pass 1: find max; Pass 2: accumulate normalizer; Pass 3: write output
-static void safe_softmax(const float* x, float* y, int V) {
-    // Pass 1: max
-    float m = -std::numeric_limits<float>::infinity();
-    for (int j = 0; j < V; ++j)
-        if (x[j] > m) m = x[j];
+#define BLOCK_SIZE      512
+#define ELEMS_PER_BLOCK (2 * BLOCK_SIZE)
 
-    // Pass 2: sum of shifted exponentials
+// Algorithm 3: Online Softmax (3-pass)
+__global__ void online_softmax(const float* x, float* y, int V) {
+    // Pass 1: max and sum of shifted exponentials
+    float m = -std::numeric_limits<float>::infinity();
     float d = 0.0f;
     for (int j = 0; j < V; ++j)
-        d += std::expf(x[j] - m);
+        float old_m = m;
+        if (x[j] > m) m = x[j];
+        d = d * std::expf(old_m - m) + std::expf(x[j] - m);
 
-    // Pass 3: normalize
+    // Pass 2: normalize
     for (int i = 0; i < V; ++i)
         y[i] = std::expf(x[i] - m) / d;
 }
@@ -38,15 +39,27 @@ int main(int argc, char* argv[]) {
     std::vector<float> x;
     if (read_file(&x, argv[1])) return 1;
 
+    // CUDA memory allocation and data passing
+
+
     // Time the kernel (exclude I/O)
-    std::vector<float> y(x.size());
-    
     auto t0 = std::chrono::high_resolution_clock::now();
-    safe_softmax(x.data(), y.data(), static_cast<int>(x.size()));
+    // CUDA execution 
+    // safe_softmax(x.data(), y.data(), static_cast<int>(x.size()));
     auto t1 = std::chrono::high_resolution_clock::now();
+
+
+    // CUDA memory release
+
 
     double elapsed_us = std::chrono::duration<double, std::micro>(t1 - t0).count();
     std::fprintf(stderr, "time: %.3f us  (V=%zu)\n", elapsed_us, x.size());
+
+    // Do serial computation and correctness comparison
+    std::vector<float> y(x.size());
+    
+    safe_softmax(x.data(), y.data(), static_cast<int>(x.size()));
+    //....
 
     // Write output
     FILE* fout = stdout;
