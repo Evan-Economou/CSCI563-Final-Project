@@ -18,8 +18,8 @@ from scipy.special import softmax
 EXE = ".exe" if sys.platform == "win32" else ""
 
 ROOT = os.path.join(os.path.dirname(__file__), "..")
-SERIAL_BINARY = os.path.join(ROOT, "build", f"safe_softmax_serial{EXE}")
-CUDA_BINARY   = os.path.join(ROOT, "build", f"online_softmax_parallel{EXE}")
+SERIAL_BINARY = os.path.join(ROOT, "build", "safe_softmax_serial{}".format(EXE))
+CUDA_BINARY   = os.path.join(ROOT, "build", "online_softmax_parallel{}".format(EXE))
 
 TOL        = 1e-5
 TEST_SIZES = [4, 128, 1024, 10_000]
@@ -28,7 +28,7 @@ SEED       = 42
 
 def run_binary(binary: str, x: np.ndarray) -> np.ndarray:
     with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as fin:
-        fin.write(" ".join(f"{v:.9g}" for v in x))
+        fin.write(" ".join("{:.9g}".format(v) for v in x))
         fin_path = fin.name
     fout_path = fin_path + ".out"
     try:
@@ -37,11 +37,11 @@ def run_binary(binary: str, x: np.ndarray) -> np.ndarray:
             capture_output=True, text=True
         )
         if result.returncode != 0:
-            print(f"  stderr: {result.stderr.strip()}", file=sys.stderr)
-            raise RuntimeError(f"Binary exited with code {result.returncode}")
+            print("  stderr: {}".format(result.stderr.strip()), file=sys.stderr)
+            raise RuntimeError("Binary exited with code {}".format(result.returncode))
         timing = result.stderr.strip()
         if timing:
-            print(f"  {timing}")
+            print("  {}".format(timing))
         y = np.loadtxt(fout_path, dtype=np.float64)
     finally:
         os.unlink(fin_path)
@@ -60,11 +60,11 @@ def main():
     label  = "CUDA" if args.cuda else "serial"
 
     if not os.path.isfile(binary):
-        print(f"error: binary not found: {binary}", file=sys.stderr)
-        print(f"  Run 'make {'cuda' if args.cuda else 'serial'}' first.", file=sys.stderr)
+        print("error: binary not found: {}".format(binary), file=sys.stderr)
+        print("  Run 'make {}' first.".format('cuda' if args.cuda else 'serial'), file=sys.stderr)
         sys.exit(1)
 
-    print(f"Testing {label} binary: {binary}\n")
+    print("Testing {} binary: {}\n".format(label, binary))
 
     rng    = np.random.default_rng(SEED)
     passed = 0
@@ -74,21 +74,21 @@ def main():
         x   = rng.uniform(-10.0, 10.0, size=V).astype(np.float32)
         ref = softmax(x.astype(np.float64))
 
-        print(f"V={V:>7}: ", end="", flush=True)
+        print("V={:>7}: ".format(V), end="", flush=True)
         try:
             got = run_binary(binary, x)
             err = np.max(np.abs(got - ref))
             status = "PASS" if err < TOL else "FAIL"
-            print(f"max_abs_err={err:.3e}  [{status}]")
+            print("max_abs_err={:.3e}  [{}]".format(err, status))
             if status == "PASS":
                 passed += 1
             else:
                 failed += 1
         except Exception as e:
-            print(f"ERROR — {e}")
+            print("ERROR — {}".format(e))
             failed += 1
 
-    print(f"\n{passed}/{passed+failed} tests passed")
+    print("\n{}/{} tests passed".format(passed, passed+failed))
     sys.exit(0 if failed == 0 else 1)
 
 
