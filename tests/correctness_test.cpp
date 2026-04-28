@@ -121,8 +121,25 @@ int main() {
         }
         if (fabsf(sum - 1.0f) > TOL) serial_ok = false;
 
-        printf("  serial : %s  time=%.3f us\n", serial_ok ? "PASS" : "FAIL", serial_us);
+        printf("  safe (serial) : %s  time=%.3f us\n", serial_ok ? "PASS" : "FAIL", serial_us);
         ++total; if (serial_ok) ++passed;
+
+        // --- Serial online softmax: check against the safe reference ---
+        std::vector<float> online(V);
+        auto t2 = std::chrono::high_resolution_clock::now();
+        online_softmax(x.data(), online.data(), V);
+        auto t3 = std::chrono::high_resolution_clock::now();
+        double online_us = std::chrono::duration<double, std::micro>(t3 - t2).count();
+
+        float online_err = max_abs_err(ref.data(), online.data(), V);
+        bool online_ok = online_err < TOL;
+
+        printf("  online (serial): %s  time=%.3f us  same=%s (max_err=%.2e)\n",
+               online_ok ? "PASS" : "FAIL",
+               online_us,
+               online_ok ? "YES" : "NO",
+               online_err);
+        ++total; if (online_ok) ++passed;
 
         // --- CUDA: run binary, get kernel time from its stderr ---
         if (has_cuda) {
@@ -132,7 +149,7 @@ int main() {
             float err = ok ? max_abs_err(ref.data(), y.data(), V) : 1.f;
             bool pass = ok && err < TOL;
 
-            printf("  cuda   : %s  ", pass ? "PASS" : "FAIL");
+            printf("  online (parallel)   : %s  ", pass ? "PASS" : "FAIL");
             if (cuda_us >= 0.0) printf("time=%.3f us  ", cuda_us);
             else                printf("time=N/A       ");
             printf("same=%s (max_err=%.2e)\n", pass ? "YES" : "NO", err);
