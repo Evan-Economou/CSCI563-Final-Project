@@ -1,13 +1,23 @@
 #ifndef UTIL_H
 #define UTIL_H
 
-#include <vector>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <limits>
 #include <vector>
 
-static void safe_softmax(const float* x, float* y, int V);
+// Algorithm 2: Safe Softmax (3-pass)
+static void safe_softmax(const float* x, float* y, int V) {
+    float m = -std::numeric_limits<float>::infinity();
+    for (int j = 0; j < V; ++j)
+        if (x[j] > m) m = x[j];
+    float d = 0.0f;
+    for (int j = 0; j < V; ++j)
+        d += std::expf(x[j] - m);
+    for (int i = 0; i < V; ++i)
+        y[i] = std::expf(x[i] - m) / d;
+}
 
 static int read_file(std::vector<float>* data, char* fName) {
     FILE* fin = std::fopen(fName, "r");
