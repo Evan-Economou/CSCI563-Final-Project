@@ -44,29 +44,33 @@ int main(int argc, char* argv[]) {
     // cudaMalloc(&d_size, sizeof(int));
     // cudaMemSet(d_size, size, sizeof(int));
 
-
+    int num_blocks = (size + BLOCK_SIZE - 1) / BLOCK_SIZE;
     // Time the kernel (exclude I/O)
     auto t0 = std::chrono::high_resolution_clock::now();
     // CUDA execution 
-    int num_blocks = (size + BLOCK_SIZE - 1) / BLOCK_SIZE;
     online_softmax<<<num_blocks, BLOCK_SIZE>>>(d_input, d_output, size);
     auto t1 = std::chrono::high_resolution_clock::now();
 
 
     // CUDA memory release
+    float* output = new float[size];
+    cudaMemcpy(output, d_output, sizeof(float) * size, cudaMemcpyDeviceToHost);
 
+    cudaFree(d_input);
+    cudaFree(d_output);
 
     double elapsed_us = std::chrono::duration<double, std::micro>(t1 - t0).count();
     std::fprintf(stderr, "time: %.3f us  (V=%zu)\n", elapsed_us, input.size());
 
     // Do serial computation and correctness comparison
-    std::vector<float> output(input.size());
     
-    safe_softmax(input.data(), output.data(), static_cast<int>(input.size()));
+    
+    safe_softmax(input.data(), output, static_cast<int>(input.size()));
     //....
 
     // Write output
-    if(write_out(&output, (argc >= 3) ? argv[2] : nullptr)) return 1;
+    std::vector<float> temp_output(output, output+size);
+    if(write_out(&temp_output, (argc >= 3) ? argv[2] : nullptr)) return 1;
 
     return 0;
 }
