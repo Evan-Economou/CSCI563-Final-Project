@@ -2,6 +2,7 @@
 #include <cstdlib>
 #include <cmath>
 #include <vector>
+#include <chrono>
 #include "util.h"
 
 #ifdef _WIN32
@@ -41,20 +42,37 @@ static bool file_exists(const char* path) {
     return false;
 }
 
-// Write input to temp file, call binary, read output back
-static bool run_binary(const char* bin, const std::vector<float>& x, std::vector<float>& y_out) {
-    const char* in_tmp  = "tmp_corr_in.txt";
-    const char* out_tmp = "tmp_corr_out.txt";
+// Run CUDA binary, capture output values and parse kernel time from its stderr.
+// time_us is set to -1 if the timing line is not found.
+static bool run_binary(const char* bin, const std::vector<float>& x,
+                       std::vector<float>& y_out, double& time_us) {
+    const char* in_tmp   = "tmp_corr_in.txt";
+    const char* out_tmp  = "tmp_corr_out.txt";
+    const char* time_tmp = "tmp_corr_time.txt";
+    time_us = -1.0;
 
     FILE* f = fopen(in_tmp, "w");
     if (!f) { perror(in_tmp); return false; }
     for (float v : x) fprintf(f, "%.9g\n", v);
     fclose(f);
 
+    // Redirect stderr to a file so we can parse the kernel timing
     char cmd[512];
-    snprintf(cmd, sizeof(cmd), "%s %s %s", bin, in_tmp, out_tmp);
+    snprintf(cmd, sizeof(cmd), "%s %s %s 2>%s", bin, in_tmp, out_tmp, time_tmp);
     int ret = system(cmd);
     remove(in_tmp);
+
+    // Parse "time: X.XXX us  (V=Y)" from captured stderr
+    FILE* tf = fopen(time_tmp, "r");
+    if (tf) {
+        char line[128];
+        while (fgets(line, sizeof(line), tf)) {
+            double t;
+            if (sscanf(line, "time: %lf us", &t) == 1) { time_us = t; break; }
+        }
+        fclose(tf);
+        remove(time_tmp);
+    }
 
     if (ret != 0) {
         fprintf(stderr, "    [binary exited with code %d]\n", ret);
@@ -77,7 +95,7 @@ static bool run_binary(const char* bin, const std::vector<float>& x, std::vector
 int main() {
     bool has_cuda = file_exists(CUDA);
 
-    printf("=== Correctness Test ===\n");
+    printf("=== Correctness & Timing Test ===\n");
     printf("cuda : %s%s\n\n", CUDA, has_cuda ? "" : "  (not found — skipping)");
 
     int total = 0, passed = 0;
@@ -86,36 +104,38 @@ int main() {
         int V = SIZES[si];
         auto x = make_input(V, 42u + (unsigned)V);
 
-        // Compute reference output by calling safe_softmax directly
-        std::vector<float> ref(V);
-        safe_softmax(x.data(), ref.data(), V);
+        printf("V=%-7d\n", V);
 
-        // Verify reference sums to 1 and is non-negative
+        // --- Serial: call safe_softmax() directly and time just the kernel ---
+        std::vector<float> ref(V);
+        auto t0 = std::chrono::high_resolution_clock::now();
+        safe_softmax(x.data(), ref.data(), V);
+        auto t1 = std::chrono::high_resolution_clock::now();
+        double serial_us = std::chrono::duration<double, std::micro>(t1 - t0).count();
+
         float sum = 0.f;
-        bool valid = true;
+        bool serial_ok = true;
         for (int i = 0; i < V; ++i) {
-            if (ref[i] < 0.f) { valid = false; break; }
+            if (ref[i] < 0.f) { serial_ok = false; break; }
             sum += ref[i];
         }
-        if (fabsf(sum - 1.0f) > TOL) valid = false;
+        if (fabsf(sum - 1.0f) > TOL) serial_ok = false;
 
-        printf("V=%-7d  serial(direct): ", V);
-        if (valid) {
-            printf("PASS  (sum=%.6f)\n", sum);
-            ++passed;
-        } else {
-            printf("FAIL  (sum=%.6f)\n", sum);
-        }
-        ++total;
+        printf("  serial : %s  time=%.3f us\n", serial_ok ? "PASS" : "FAIL", serial_us);
+        ++total; if (serial_ok) ++passed;
 
-        // CUDA binary: compare against serial reference
+        // --- CUDA: run binary, get kernel time from its stderr ---
         if (has_cuda) {
             std::vector<float> y;
-            bool ok = run_binary(CUDA, x, y);
+            double cuda_us;
+            bool ok = run_binary(CUDA, x, y, cuda_us);
             float err = ok ? max_abs_err(ref.data(), y.data(), V) : 1.f;
             bool pass = ok && err < TOL;
-            printf("           cuda(bin):   %s  max_err=%.2e\n",
-                   pass ? "PASS" : "FAIL", err);
+
+            printf("  cuda   : %s  ", pass ? "PASS" : "FAIL");
+            if (cuda_us >= 0.0) printf("time=%.3f us  ", cuda_us);
+            else                printf("time=N/A       ");
+            printf("same=%s (max_err=%.2e)\n", pass ? "YES" : "NO", err);
             ++total; if (pass) ++passed;
         }
     }
