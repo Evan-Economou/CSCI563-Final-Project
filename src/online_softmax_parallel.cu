@@ -69,8 +69,8 @@ int main(int argc, char* argv[]) {
 
 
     // CUDA memory release
-    float* output = new float[size];
-    cudaMemcpy(output, d_output, sizeof(float) * size, cudaMemcpyDeviceToHost);
+    std::vector<float> output(size);
+    cudaMemcpy(output.data(), d_output, sizeof(float) * size, cudaMemcpyDeviceToHost);
 
     cudaFree(d_input);
     cudaFree(d_output);
@@ -78,15 +78,8 @@ int main(int argc, char* argv[]) {
     double elapsed_us = std::chrono::duration<double, std::micro>(t1 - t0).count();
     std::fprintf(stderr, "time: %.3f us  (V=%zu)\n", elapsed_us, input.size());
 
-    // Do serial computation and correctness comparison
-    
-    
-    safe_softmax(input.data(), output, static_cast<int>(input.size()));
-    //....
-
     // Write output
-    std::vector<float> temp_output(output, output+size);
-    if(write_out(&temp_output, (argc >= 3) ? argv[2] : nullptr)) return 1;
+    if(write_out(&output, (argc >= 3) ? argv[2] : nullptr)) return 1;
 
     return 0;
 }

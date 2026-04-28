@@ -23,6 +23,21 @@ void safe_softmax(const float* x, float* y, int V) {
         y[i] = std::exp(x[i] - m) / d;
 }
 
+void online_softmax(const float* input, float* output, int size) {
+    // Pass 1: max and sum of shifted exponentials
+    float m = input[0];
+    float d = 0.0f;
+    for (int j = 0; j < size; j++) {
+        float old_m = m;
+        if (input[j] > m) m = input[j];
+        d = d * std::exp(old_m - m) + std::exp(input[j] - m);
+    }
+
+    // Pass 2: normalize
+    for (int i = 0; i < size; ++i)
+        output[i] = std::exp(input[i] - m) / d;
+}
+
 static int read_file(std::vector<float>* data, char* fName) {
     FILE* fin = std::fopen(fName, "r");
     if (!fin) { std::perror(fName); return 1; }
