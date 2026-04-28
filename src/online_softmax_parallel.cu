@@ -4,21 +4,36 @@
 #include <string>
 #include "util.h"
 
-#define BLOCK_SIZE      512
+#define BLOCK_SIZE      32
 #define ELEMS_PER_BLOCK (2 * BLOCK_SIZE)
 
 // Algorithm 3: Online Softmax (3-pass)
 __global__ void online_softmax(const float* input, float* output, int size) {
+    // Make shared data
+    __shared__ int s[ELEMS_PER_BLOCK];
+
+    // Calculate tid
+    int tid  = threadIdx.x;
+    int base = blockIdx.x * ELEMS_PER_BLOCK;
+    int i0   = base + 2 * tid;
+    int i1   = base + 2 * tid + 1;
+    
     // Pass 1: max and sum of shifted exponentials
+    // Pass 1 variables (pad to power of 2)
     float m = input[0];
     float d = 0.0f;
+
+    // Rework to halve the remaining block each loop iteration, do calculation, write to shared memory
     for (int j = 0; j < size; j++) {
         float old_m = m;
         if (input[j] > m) m = input[j];
         d = d * std::exp(old_m - m) + std::exp(input[j] - m);
     }
 
+    // Write final d and m to main cuda memory, then syncthreads (maybe before as well)
+
     // Pass 2: normalize
+    // Standard parallelization, calculate output for each index
     for (int i = 0; i < size; ++i)
         output[i] = std::exp(input[i] - m) / d;
 }
@@ -44,7 +59,8 @@ int main(int argc, char* argv[]) {
     // cudaMalloc(&d_size, sizeof(int));
     // cudaMemSet(d_size, size, sizeof(int));
 
-    int num_blocks = (size + BLOCK_SIZE - 1) / BLOCK_SIZE;
+    // TODO: use ELEMENT_PER_BLOCK
+    int num_blocks = (size + ELEMS_PER_BLOCK - 1) / ELEMS_PER_BLOCK;
     // Time the kernel (exclude I/O)
     auto t0 = std::chrono::high_resolution_clock::now();
     // CUDA execution 
