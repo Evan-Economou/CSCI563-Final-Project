@@ -8,7 +8,7 @@ SERIAL  = $(BUILD)/safe_softmax_serial
 CUDA    = $(BUILD)/online_softmax_parallel
 TESTBIN = $(BUILD)/correctness_test
 
-.PHONY: all serial cuda test test_py clean
+.PHONY: all serial cuda test test_cuda test_py clean
 
 all: serial cuda
 
@@ -29,6 +29,9 @@ $(TESTBIN): tests/correctness_test.cpp src/util.h | $(BUILD)
 	$(CXX) $(CXXFLAGS) -Isrc tests/correctness_test.cpp -o $@
 
 test: $(TESTBIN) $(SERIAL)
+	./$(TESTBIN)
+
+test_cuda: $(TESTBIN) $(SERIAL) $(CUDA)
 	./$(TESTBIN)
 
 test_py: $(SERIAL)
