@@ -1,7 +1,7 @@
 CXX       = g++
 NVCC      = nvcc
 CXXFLAGS  = -O2 -std=c++17 -Wall -Wextra
-NVCCFLAGS = -O2 -std=c++17
+NVCCFLAGS = -O2 -std=c++14
 
 BUILD  = build
 SERIAL = $(BUILD)/safe_softmax_serial

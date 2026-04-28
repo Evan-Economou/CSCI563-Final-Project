@@ -8,34 +8,48 @@
 #define ELEMS_PER_BLOCK (2 * BLOCK_SIZE)
 
 // Algorithm 3: Online Softmax (3-pass)
-__global__ void online_softmax(const float* x, float* y, int V) {
+__global__ void online_softmax(const float* input, float* output, int size) {
     // Pass 1: max and sum of shifted exponentials
-    float m = -std::numeric_limits<float>::infinity();
+    float m = input[0];
     float d = 0.0f;
-    for (int j = 0; j < V; ++j)
+    for (int j = 0; j < size; j++) {
         float old_m = m;
-        if (x[j] > m) m = x[j];
-        d = d * std::exp(old_m - m) + std::exp(x[j] - m);
+        if (input[j] > m) m = input[j];
+        d = d * std::exp(old_m - m) + std::exp(input[j] - m);
+    }
 
     // Pass 2: normalize
-    for (int i = 0; i < V; ++i)
-        y[i] = std::exp(x[i] - m) / d;
+    for (int i = 0; i < size; ++i)
+        output[i] = std::exp(input[i] - m) / d;
 }
 
 int main(int argc, char* argv[]) {
     if (argc < 2) { usage(argv[0]); return 1; }
 
     // Read input
-    std::vector<float> x;
-    if (read_file(&x, argv[1])) return 1;
+    std::vector<float> input;
+    if (read_file(&input, argv[1])) return 1;
+
+    int size = (int)input.size();
 
     // CUDA memory allocation and data passing
+    float* d_input = nullptr;
+    cudaMalloc(&d_input, sizeof(float) * size);
+    cudaMemcpy(d_input, input.data(), sizeof(float) * size, cudaMemcpyHostToDevice);
+
+    float* d_output = nullptr;
+    cudaMalloc(&d_output, sizeof(float) * size);
+    
+    // int* d_size = nullptr;
+    // cudaMalloc(&d_size, sizeof(int));
+    // cudaMemSet(d_size, size, sizeof(int));
 
 
     // Time the kernel (exclude I/O)
     auto t0 = std::chrono::high_resolution_clock::now();
     // CUDA execution 
-    // safe_softmax(x.data(), y.data(), static_cast<int>(x.size()));
+    int num_blocks = (size + BLOCK_SIZE - 1) / BLOCK_SIZE;
+    online_softmax<<<num_blocks, BLOCK_SIZE>>>(d_input, d_output, size);
     auto t1 = std::chrono::high_resolution_clock::now();
 
 
@@ -43,16 +57,16 @@ int main(int argc, char* argv[]) {
 
 
     double elapsed_us = std::chrono::duration<double, std::micro>(t1 - t0).count();
-    std::fprintf(stderr, "time: %.3f us  (V=%zu)\n", elapsed_us, x.size());
+    std::fprintf(stderr, "time: %.3f us  (V=%zu)\n", elapsed_us, input.size());
 
     // Do serial computation and correctness comparison
-    std::vector<float> y(x.size());
+    std::vector<float> output(input.size());
     
-    safe_softmax(x.data(), y.data(), static_cast<int>(x.size()));
+    safe_softmax(input.data(), output.data(), static_cast<int>(input.size()));
     //....
 
     // Write output
-    if(write_out(&y, (argc >= 3) ? argv[2] : nullptr)) return 1;
+    if(write_out(&output, (argc >= 3) ? argv[2] : nullptr)) return 1;
 
     return 0;
 }

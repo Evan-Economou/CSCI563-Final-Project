@@ -3,24 +3,6 @@
 #include <string>
 #include "util.h"
 
-// Algorithm 2: Safe Softmax (3-pass)
-// Pass 1: find max; Pass 2: accumulate normalizer; Pass 3: write output
-static void safe_softmax(const float* x, float* y, int V) {
-    // Pass 1: max
-    float m = -std::numeric_limits<float>::infinity();
-    for (int j = 0; j < V; ++j)
-        if (x[j] > m) m = x[j];
-
-    // Pass 2: sum of shifted exponentials
-    float d = 0.0f;
-    for (int j = 0; j < V; ++j)
-        d += std::exp(x[j] - m);
-
-    // Pass 3: normalize
-    for (int i = 0; i < V; ++i)
-        y[i] = std::exp(x[i] - m) / d;
-}
-
 int main(int argc, char* argv[]) {
     if (argc < 2) { usage(argv[0]); return 1; }
 
