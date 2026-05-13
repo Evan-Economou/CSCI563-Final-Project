@@ -155,8 +155,8 @@ int main(int argc, char* argv[]) {
     online_softmax_global_m_d<<<1, num_blocks, sizeof(float) * 2 * num_blocks>>>(m_d_block_output, d_m, num_blocks);
     float* local_d_m = new float[2];
     cudaMemcpy(local_d_m, d_m, sizeof(float) * 2, cudaMemcpyDeviceToHost);
-    std::fprintf(stdout, "Final m value: %f \n", local_d_m[1]);
-    std::fprintf(stdout, "Final d value: %f \n", local_d_m[0]);
+    // std::fprintf(stdout, "Final m value: %f \n", local_d_m[1]);
+    // std::fprintf(stdout, "Final d value: %f \n", local_d_m[0]);
     online_softmax_pass_2<<<num_blocks, 2*BLOCK_SIZE>>>(d_input, d_m, d_output, size);
     auto t1 = std::chrono::high_resolution_clock::now();
 
