@@ -109,7 +109,7 @@ int main() {
         // --- Serial: call safe_softmax() directly and time just the kernel ---
         std::vector<float> ref(V);
         auto t0 = std::chrono::high_resolution_clock::now();
-        safe_softmax(x.data(), ref.data(), V);
+        safe_softmax_timed(x.data(), ref.data(), V);
         auto t1 = std::chrono::high_resolution_clock::now();
         double serial_us = std::chrono::duration<double, std::micro>(t1 - t0).count();
 
@@ -127,7 +127,7 @@ int main() {
         // --- Serial online softmax: check against the safe reference ---
         std::vector<float> online(V);
         auto t2 = std::chrono::high_resolution_clock::now();
-        online_softmax(x.data(), online.data(), V);
+        online_softmax_timed(x.data(), online.data(), V);
         auto t3 = std::chrono::high_resolution_clock::now();
         double online_us = std::chrono::duration<double, std::micro>(t3 - t2).count();
 

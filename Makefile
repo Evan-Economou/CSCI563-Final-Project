@@ -6,9 +6,10 @@ NVCCFLAGS = -O2 -std=c++14
 BUILD   = build
 SERIAL  = $(BUILD)/safe_softmax_serial
 CUDA    = $(BUILD)/online_softmax_parallel
-TESTBIN = $(BUILD)/correctness_test
+TESTBIN  = $(BUILD)/correctness_test
+BENCHBIN = $(BUILD)/bench_serial
 
-.PHONY: all serial cuda test test_cuda test_py clean
+.PHONY: all serial cuda bench_serial test test_cuda test_py clean
 
 all: serial cuda
 
@@ -28,6 +29,11 @@ $(CUDA): src/online_softmax_parallel.cu src/util.h | $(BUILD)
 $(TESTBIN): tests/correctness_test.cpp src/util.h | $(BUILD)
 	$(CXX) $(CXXFLAGS) -Isrc tests/correctness_test.cpp -o $@
 
+$(BENCHBIN): bench/bench_serial.cpp src/util.h | $(BUILD)
+	$(CXX) $(CXXFLAGS) -Isrc bench/bench_serial.cpp -o $@
+
+bench_serial: $(BENCHBIN)
+
 test: $(TESTBIN) $(SERIAL)
 	./$(TESTBIN)
 
@@ -39,3 +45,4 @@ test_py: $(SERIAL)
 
 clean:
 	rm -rf $(BUILD)
+	rm -f bench_results.csv tmp_bench_in.txt tmp_bench_out.txt tmp_bench_stderr.txt
