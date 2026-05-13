@@ -14,7 +14,7 @@
 static const float TOL     = 1e-5f;
 static const char* CUDA    = "build/online_softmax_parallel" EXE_EXT;
 static const int   SIZES[] = { 4, 128, 1024, 10000, 100000 };
-static const int   N_SIZES = 1;
+static const int   N_SIZES = 5;
 
 // Deterministic LCG — reproducible inputs in [-10, 10]
 static std::vector<float> make_input(int V, unsigned seed) {

@@ -1,5 +1,6 @@
 #include <cuda_runtime_api.h>
 #include <chrono>
+#include <cfloat>
 #include <limits>
 #include <string>
 #include "util.h"
@@ -8,6 +9,14 @@
 
 #define BLOCK_SIZE      512
 #define ELEMS_PER_BLOCK (2 * BLOCK_SIZE)
+
+__device__  void merge_softmax(float& left_m, float& left_d, float right_m, float right_d) {
+    float old_m = left_m;
+    float old_d = left_d;
+    float m = old_m > right_m ? old_m : right_m;
+    left_m = m;
+    left_d = old_d * std::exp(old_m - m) + right_d * std::exp(right_m - m);
+}
 
 // Algorithm 3: Online Softmax (3-pass)
 __global__ void online_softmax_pass_1(const float* input, float* output, const int size) {
@@ -22,42 +31,34 @@ __global__ void online_softmax_pass_1(const float* input, float* output, const i
     int base = blockIdx.x * ELEMS_PER_BLOCK;
     int i0   = base + 2 * tid;
     int i1   = base + 2 * tid + 1;
+
+    m_shared[tid] = -FLT_MAX;
+    d_shared[tid] = 0.0f;
     
     // Pass 1: max and sum of shifted exponentials
-    // Pass 1 variables (pad to power of 2)
-    // if(i0 >= size) { //out of bounds, need padding
-    //     m_shared[tid] = input[0];
-    //     d_shared[tid] = 1;
-    // } else if (i1 >= size) {
-    //     m_shared[tid] = input[i0];
-    //     d_shared[tid] = 1;
-    // } else {
     if(i0 < size && i1 < size) {
         float m = input[i0] > input[i1] ? input[i0] : input[i1];
         m_shared[tid] = m;
         d_shared[tid] = std::exp(input[i0] - m) + std::exp(input[i1] - m);
-    } else if (i1 >= size) {
+    } else if (i0 < size) {
         m_shared[tid] = input[i0];
         d_shared[tid] = 1;
     }
 
     __syncthreads();
     
-    // Rework to halve the remaining block each loop iteration, do calculation, write to shared memory
     for(int i = ELEMS_PER_BLOCK/4; i > 0; i /= 2){
 
         __syncthreads();
         if (tid < i) {
             //merge the m and d values of tid and tid + i
-            if(!(tid + i > ELEMS_PER_BLOCK/2)) {
-                float m = m_shared[tid] > m_shared[tid + i] ? m_shared[tid] : m_shared[tid+i];
-                m_shared[tid] = m;
-                d_shared[tid] = d_shared[tid] * std::exp(m_shared[tid] - m) + d_shared[tid + i] * std::exp(m_shared[tid + i] - m);
+            if (tid + i < ELEMS_PER_BLOCK / 2) {
+                merge_softmax(m_shared[tid], d_shared[tid], m_shared[tid + i], d_shared[tid + i]);
             }
         }
     }
 
-    // Write final d and m to main cuda memory, then syncthreads (maybe before as well)
+    // Write final d and m to main cuda memory, then syncthreads
     if(tid == 0) {
         int num_blocks = (size + ELEMS_PER_BLOCK - 1) / ELEMS_PER_BLOCK;
         output[blockIdx.x] = m_shared[0];
@@ -72,19 +73,22 @@ __global__ void online_softmax_global_m_d(float* block_results, float* d_m, cons
 
     // Calculate tid and populate shared memory
     int tid  = threadIdx.x;
-    m_shared[tid] = block_results[tid];
-    d_shared[tid] = block_results[tid + num_blocks];
+    if (tid < num_blocks) {
+        m_shared[tid] = block_results[tid];
+        d_shared[tid] = block_results[tid + num_blocks];
+    } else {
+        m_shared[tid] = -FLT_MAX;
+        d_shared[tid] = 0.0f;
+    }
 
     __syncthreads();
 
     for(int i = ELEMS_PER_BLOCK/4; i > 0; i /= 2){
         __syncthreads();
         if (tid < i) {
-            if(!(tid + i > num_blocks)) {
-                //merge the m and d values of tid and tid + i, if the associated tid+i value is off the end of the list, just don't change it
-                float m = m_shared[tid] > m_shared[tid + i] ? m_shared[tid] : m_shared[tid+i];
-                m_shared[tid] = m;
-                d_shared[tid] = d_shared[tid] * std::exp(m_shared[tid] - m) + d_shared[tid + i] * std::exp(m_shared[tid + i] - m);
+            if (tid + i < num_blocks) {
+                // merge the m and d values of tid and tid + i
+                merge_softmax(m_shared[tid], d_shared[tid], m_shared[tid + i], d_shared[tid + i]);
             }   
         }
     }
@@ -96,13 +100,13 @@ __global__ void online_softmax_global_m_d(float* block_results, float* d_m, cons
     }
 }
 
-__global__ void online_softmax_pass_2(const float* input, float* d_m, float* output, const int size) {
-    // Calculate tid
-    int tid  = threadIdx.x;
+__global__ void online_softmax_pass_2(const float* input, const float* d_m, float* output, const int size) {
+    // Calculate global output index
+    int tid = blockIdx.x * blockDim.x + threadIdx.x;
 
     // Pass 2: normalize
     // Standard parallelization, calculate output for each index
-    if(tid < size) {
+    if (tid < size) {
         output[tid] = std::exp(input[tid] - d_m[1]) / d_m[0];
     }
 }
@@ -113,9 +117,9 @@ int main(int argc, char* argv[]) {
     // Read input
     std::vector<float> input;
     if (read_file(&input, argv[1])) return 1;
-    for(int i = 0; i< input.size(); i++) {
-        std::cout << input[i];
-    }
+    // for(int i = 0; i< input.size(); i++) {
+    //     std::cout << input[i];
+    // }
     std::cout << std::endl;
 
     int size = (int)input.size();
@@ -143,16 +147,16 @@ int main(int argc, char* argv[]) {
     online_softmax_pass_1<<<num_blocks, BLOCK_SIZE>>>(d_input, m_d_block_output, size);
     float* blockoutput = new float[num_blocks*2];
     cudaMemcpy(blockoutput, m_d_block_output, sizeof(float) * num_blocks * 2, cudaMemcpyDeviceToHost);
-    for(int i = 0; i < num_blocks; i++) {
-        std::fprintf(stdout, "Block #%i m: %f \n", i, blockoutput[i]);
-        std::fprintf(stdout, "Block #%i d: %f \n", i, blockoutput[i + num_blocks]);
-    }
+    // for(int i = 0; i < num_blocks; i++) {
+    //     std::fprintf(stdout, "Block #%i m: %f \n", i, blockoutput[i]);
+    //     std::fprintf(stdout, "Block #%i d: %f \n", i, blockoutput[i + num_blocks]);
+    // }
     
     online_softmax_global_m_d<<<1, num_blocks, sizeof(float) * 2 * num_blocks>>>(m_d_block_output, d_m, num_blocks);
     float* local_d_m = new float[2];
     cudaMemcpy(local_d_m, d_m, sizeof(float) * 2, cudaMemcpyDeviceToHost);
-    std::fprintf(stdout, "Final m value: %f \n", local_d_m[1]);
-    std::fprintf(stdout, "Final d value: %f \n", local_d_m[0]);
+    // std::fprintf(stdout, "Final m value: %f \n", local_d_m[1]);
+    // std::fprintf(stdout, "Final d value: %f \n", local_d_m[0]);
     online_softmax_pass_2<<<num_blocks, 2*BLOCK_SIZE>>>(d_input, d_m, d_output, size);
     auto t1 = std::chrono::high_resolution_clock::now();
 
