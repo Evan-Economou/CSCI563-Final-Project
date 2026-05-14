@@ -27,7 +27,8 @@ Makefile                       — build targets: serial, cuda, bench_serial, te
 ```bash
 make serial       # build safe_softmax_serial.exe
 make cuda         # build online_softmax_parallel.exe
-make test         # run C++ correctness tests
+make test         # run C++ correctness tests (does not run cuda)
+make test_cuda    # run C++ correctness tests with the cuda program
 make test_py      # run Python/scipy correctness tests
 make clean        # remove build/
 ```
