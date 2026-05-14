@@ -29,6 +29,7 @@ make serial       # build safe_softmax_serial.exe
 make cuda         # build online_softmax_parallel.exe
 make test         # run C++ correctness tests
 make test_py      # run Python/scipy correctness tests
+make test_cuda    # run tests for the CUDA implementation
 make clean        # remove build/
 ```
 
