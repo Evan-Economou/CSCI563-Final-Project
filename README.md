@@ -30,6 +30,7 @@ make cuda         # build online_softmax_parallel.exe
 make test         # run C++ correctness tests (does not run cuda)
 make test_cuda    # run C++ correctness tests with the cuda program
 make test_py      # run Python/scipy correctness tests
+make test_cuda    # run tests for the CUDA implementation
 make clean        # remove build/
 ```
 
